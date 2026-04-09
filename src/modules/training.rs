@@ -172,10 +172,6 @@ fn parse_lift_value(raw: &str) -> Vec<ParsedSet> {
     sets
 }
 
-fn today_str() -> String {
-    chrono::Local::now().format("%Y-%m-%d").to_string()
-}
-
 impl Module for Training {
     fn id(&self) -> &str {
         "training"
@@ -354,15 +350,15 @@ impl Module for Training {
         draw_tsb_gauge(f, chunks[0], conn);
 
         // --- Session metadata ---
-        let today = today_str();
+        let today = config.effective_today();
         draw_session_meta(f, chunks[1], conn, &today);
 
         // --- Today's lifts ---
         draw_lifts(f, chunks[2], conn, config, &today);
     }
 
-    fn status_json(&self, conn: &Connection, _config: &Config) -> Option<serde_json::Value> {
-        let today = today_str();
+    fn status_json(&self, conn: &Connection, config: &Config) -> Option<serde_json::Value> {
+        let today = config.effective_today();
         let mut stmt = conn
             .prepare(
                 "SELECT session_type, duration, rpe, week, block FROM sessions WHERE date = ?1",

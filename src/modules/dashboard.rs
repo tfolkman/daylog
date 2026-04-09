@@ -17,10 +17,6 @@ impl Dashboard {
     }
 }
 
-fn today_str() -> String {
-    chrono::Local::now().format("%Y-%m-%d").to_string()
-}
-
 fn rating_color(value: i32) -> Color {
     match value {
         1 => Color::Red,
@@ -45,8 +41,8 @@ impl Module for Dashboard {
         Ok(vec![])
     }
 
-    fn draw(&self, f: &mut Frame, area: Rect, conn: &Connection, _config: &Config) {
-        let today = today_str();
+    fn draw(&self, f: &mut Frame, area: Rect, conn: &Connection, config: &Config) {
+        let today = config.effective_today();
 
         let block = Block::default().borders(Borders::ALL).title(" Dashboard ");
 
@@ -204,8 +200,8 @@ impl Module for Dashboard {
         f.render_widget(text, inner[0]);
     }
 
-    fn status_json(&self, conn: &Connection, _config: &Config) -> Option<serde_json::Value> {
-        let today = today_str();
+    fn status_json(&self, conn: &Connection, config: &Config) -> Option<serde_json::Value> {
+        let today = config.effective_today();
         crate::db::load_today(conn, &today).ok().flatten()
     }
 }

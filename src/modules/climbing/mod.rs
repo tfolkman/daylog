@@ -173,7 +173,7 @@ impl Module for Climbing {
         Ok(ops)
     }
 
-    fn draw(&self, f: &mut Frame, area: Rect, conn: &Connection, _config: &Config) {
+    fn draw(&self, f: &mut Frame, area: Rect, conn: &Connection, config: &Config) {
         let outer_block = Block::default().borders(Borders::ALL).title(" Climbing ");
 
         let inner = outer_block.inner(area);
@@ -189,11 +189,11 @@ impl Module for Climbing {
 
         self.draw_grade_pyramid(f, chunks[0], conn);
         self.draw_weekly_max(f, chunks[1], conn);
-        self.draw_session_summary(f, chunks[2], conn);
+        self.draw_session_summary(f, chunks[2], conn, &config.effective_today());
     }
 
-    fn status_json(&self, conn: &Connection, _config: &Config) -> Option<serde_json::Value> {
-        let today = chrono::Local::now().format("%Y-%m-%d").to_string();
+    fn status_json(&self, conn: &Connection, config: &Config) -> Option<serde_json::Value> {
+        let today = config.effective_today();
 
         let today_sends: i64 = conn
             .query_row(
@@ -335,15 +335,13 @@ impl Climbing {
         f.render_widget(paragraph, inner);
     }
 
-    fn draw_session_summary(&self, f: &mut Frame, area: Rect, conn: &Connection) {
+    fn draw_session_summary(&self, f: &mut Frame, area: Rect, conn: &Connection, today: &str) {
         let block = Block::default()
             .borders(Borders::ALL)
             .title(" Today's Session ");
 
         let inner = block.inner(area);
         f.render_widget(block, area);
-
-        let today = chrono::Local::now().format("%Y-%m-%d").to_string();
 
         let sends: i64 = conn
             .query_row(

@@ -1,6 +1,8 @@
 notes_dir = "~/daylog-notes"
 # db_path defaults to {notes_dir}/.daylog.db
 # refresh_secs = 15
+# day_start_hour = 0  # Hour (0-23) when a new day starts. E.g., 4 means
+                       # anything before 4:00 AM counts as the previous day.
 
 [modules]
 dashboard = true

@@ -133,7 +133,7 @@ fn draw(f: &mut ratatui::Frame, app: &App, conn: &rusqlite::Connection, config: 
 }
 
 fn open_editor(config: &Config) -> Result<()> {
-    let today = chrono::Local::now().format("%Y-%m-%d").to_string();
+    let today = config.effective_today();
     let note_path = config.notes_dir_path().join(format!("{today}.md"));
 
     if !note_path.exists() {

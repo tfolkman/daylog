@@ -139,7 +139,7 @@ fn cmd_status() -> Result<()> {
     }
 
     let conn = db::open_ro(&db_path)?;
-    let today = chrono::Local::now().format("%Y-%m-%d").to_string();
+    let today = config.effective_today();
 
     let mut output = serde_json::json!({});
     if let Some(day_data) = db::load_today(&conn, &today)? {
@@ -178,7 +178,7 @@ fn cmd_edit(date: Option<&str>) -> Result<()> {
     let config = Config::load()?;
     let date_str = match date {
         Some(d) => d.to_string(),
-        None => chrono::Local::now().format("%Y-%m-%d").to_string(),
+        None => config.effective_today(),
     };
     let note_path = config.notes_dir_path().join(format!("{date_str}.md"));
 

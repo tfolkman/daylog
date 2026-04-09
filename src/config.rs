@@ -1,3 +1,4 @@
+use chrono::{Duration, Local};
 use color_eyre::eyre::{Result, WrapErr};
 use serde::Deserialize;
 use std::collections::HashMap;
@@ -10,6 +11,8 @@ pub struct Config {
     pub db_path: Option<String>,
     #[serde(default = "default_refresh_secs")]
     pub refresh_secs: u64,
+    #[serde(default)]
+    pub day_start_hour: u8,
     #[serde(default)]
     pub modules: ModulesConfig,
     #[serde(default)]
@@ -109,7 +112,22 @@ impl Config {
                 notes.display()
             );
         }
+        if self.day_start_hour > 23 {
+            color_eyre::eyre::bail!(
+                "day_start_hour must be between 0 and 23, got {}.",
+                self.day_start_hour
+            );
+        }
         Ok(())
+    }
+
+    /// Returns today's effective date, shifted by `day_start_hour`.
+    ///
+    /// If the current time is before `day_start_hour`, the effective date
+    /// is yesterday. For example, with `day_start_hour = 4`, 00:30 on
+    /// April 10 counts as April 9.
+    pub fn effective_today(&self) -> String {
+        effective_date(Local::now(), self.day_start_hour)
     }
 
     pub fn config_dir() -> Result<PathBuf> {
@@ -170,6 +188,24 @@ pub fn default_config_contents() -> &'static str {
     include_str!("../presets/default.toml")
 }
 
+/// Compute the effective date for a given datetime and day-start hour.
+///
+/// If the hour of `now` is before `day_start_hour`, the effective date is
+/// the previous calendar day.
+pub fn effective_date<Tz: chrono::TimeZone>(now: chrono::DateTime<Tz>, day_start_hour: u8) -> String
+where
+    Tz::Offset: std::fmt::Display,
+{
+    let date = if (now.hour() as u8) < day_start_hour {
+        (now - Duration::days(1)).format("%Y-%m-%d").to_string()
+    } else {
+        now.format("%Y-%m-%d").to_string()
+    };
+    date
+}
+
+use chrono::Timelike;
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -188,5 +224,78 @@ mod tests {
         assert!(config.modules.training);
         assert!(config.modules.trends);
         assert!(!config.modules.climbing);
+        assert_eq!(config.day_start_hour, 0);
+    }
+
+    #[test]
+    fn test_parse_day_start_hour() {
+        let config: Config =
+            toml::from_str("notes_dir = '/tmp/test'\nday_start_hour = 4\n[modules]\n").unwrap();
+        assert_eq!(config.day_start_hour, 4);
+    }
+
+    #[test]
+    fn test_day_start_hour_defaults_to_zero() {
+        let config: Config = toml::from_str("notes_dir = '/tmp/test'\n[modules]\n").unwrap();
+        assert_eq!(config.day_start_hour, 0);
+    }
+
+    // -- effective_date tests --
+
+    use chrono::TimeZone;
+
+    fn local(
+        year: i32,
+        month: u32,
+        day: u32,
+        hour: u32,
+        min: u32,
+    ) -> chrono::DateTime<chrono::FixedOffset> {
+        chrono::FixedOffset::east_opt(0)
+            .unwrap()
+            .with_ymd_and_hms(year, month, day, hour, min, 0)
+            .unwrap()
+    }
+
+    #[test]
+    fn test_effective_date_midnight_boundary_default() {
+        // With day_start_hour=0, 00:30 on Apr 10 → Apr 10
+        let dt = local(2026, 4, 10, 0, 30);
+        assert_eq!(effective_date(dt, 0), "2026-04-10");
+    }
+
+    #[test]
+    fn test_effective_date_before_boundary() {
+        // With day_start_hour=4, 00:30 on Apr 10 → Apr 9 (still "yesterday")
+        let dt = local(2026, 4, 10, 0, 30);
+        assert_eq!(effective_date(dt, 4), "2026-04-09");
+    }
+
+    #[test]
+    fn test_effective_date_at_boundary() {
+        // With day_start_hour=4, 04:00 on Apr 10 → Apr 10 (new day starts)
+        let dt = local(2026, 4, 10, 4, 0);
+        assert_eq!(effective_date(dt, 4), "2026-04-10");
+    }
+
+    #[test]
+    fn test_effective_date_after_boundary() {
+        // With day_start_hour=4, 23:00 on Apr 9 → Apr 9 (normal)
+        let dt = local(2026, 4, 9, 23, 0);
+        assert_eq!(effective_date(dt, 4), "2026-04-09");
+    }
+
+    #[test]
+    fn test_effective_date_just_before_boundary() {
+        // With day_start_hour=4, 03:59 on Apr 10 → Apr 9
+        let dt = local(2026, 4, 10, 3, 59);
+        assert_eq!(effective_date(dt, 4), "2026-04-09");
+    }
+
+    #[test]
+    fn test_effective_date_jan_1_rollback() {
+        // With day_start_hour=5, 02:00 on Jan 1 → Dec 31 of previous year
+        let dt = local(2026, 1, 1, 2, 0);
+        assert_eq!(effective_date(dt, 5), "2025-12-31");
     }
 }
