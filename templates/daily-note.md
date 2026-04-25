@@ -4,7 +4,7 @@ sleep:                    # e.g., 10:30pm-6:15am
 sleep_quality:            # 1-5
 mood:                     # 1-5
 energy:                   # 1-5
-weight:                   # lbs
+weight:                   # WEIGHT_UNIT_PLACEHOLDER
 
 type:                     # session type: lifting, cardio, climbing, mixed, rest
 week:                     # training week number

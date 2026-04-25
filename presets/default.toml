@@ -1,6 +1,8 @@
 notes_dir = "~/daylog-notes"
 # db_path defaults to {notes_dir}/.daylog.db
 # refresh_secs = 15
+# weight_unit = "lbs"  # or "kg". The DB stores raw numbers without unit info,
+                       # so changing this mid-use makes historical values ambiguous.
 
 [modules]
 dashboard = true

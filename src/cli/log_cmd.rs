@@ -26,12 +26,11 @@ pub fn execute(
     let content = if note_path.exists() {
         std::fs::read_to_string(&note_path)?
     } else {
-        let template = include_str!("../../templates/daily-note.md");
-        template.replace("DATE_PLACEHOLDER", &today)
+        crate::template::render_daily_note(&today, config)
     };
 
     // Apply the edit based on field routing
-    let updated = route_field(field, value, &joined, &content, modules)?;
+    let updated = route_field(field, value, &joined, &content, config, modules)?;
 
     // Write atomically
     frontmatter::atomic_write(&note_path, &updated)?;
@@ -40,16 +39,17 @@ pub fn execute(
 }
 
 /// Validate a core field value before writing.
-fn validate_core_field(field: &str, value: &str) -> Result<()> {
+fn validate_core_field(field: &str, value: &str, config: &Config) -> Result<()> {
     match field {
         "weight" => {
+            let unit = config.weight_unit;
             let w: f64 = value.parse().map_err(|_| {
                 color_eyre::eyre::eyre!(
-                    "Invalid weight: '{value}'. Expected a number (e.g., 173.4)"
+                    "Invalid weight: '{value}'. Expected a number in {unit} (e.g., 173.4)"
                 )
             })?;
             if w <= 0.0 || w > 1000.0 {
-                bail!("Invalid weight: {w}. Expected a value between 0 and 1000");
+                bail!("Invalid weight: {w}. Expected a value between 0 and 1000 {unit}");
             }
         }
         "mood" | "energy" | "sleep_quality" => {
@@ -77,16 +77,17 @@ fn route_field(
     value: &[String],
     joined: &str,
     content: &str,
+    config: &Config,
     modules: &[Box<dyn Module>],
 ) -> Result<String> {
     // Core fields: validate then write
     match field {
         "weight" => {
-            validate_core_field("weight", joined)?;
+            validate_core_field("weight", joined, config)?;
             return Ok(frontmatter::set_scalar(content, "weight", joined));
         }
         "sleep" => {
-            validate_core_field("sleep", joined)?;
+            validate_core_field("sleep", joined, config)?;
             return Ok(frontmatter::set_scalar(
                 content,
                 "sleep",
@@ -94,15 +95,15 @@ fn route_field(
             ));
         }
         "mood" => {
-            validate_core_field("mood", joined)?;
+            validate_core_field("mood", joined, config)?;
             return Ok(frontmatter::set_scalar(content, "mood", joined));
         }
         "energy" => {
-            validate_core_field("energy", joined)?;
+            validate_core_field("energy", joined, config)?;
             return Ok(frontmatter::set_scalar(content, "energy", joined));
         }
         "sleep_quality" => {
-            validate_core_field("sleep_quality", joined)?;
+            validate_core_field("sleep_quality", joined, config)?;
             return Ok(frontmatter::set_scalar(content, "sleep_quality", joined));
         }
         _ => {}
@@ -169,35 +170,45 @@ Good session.
         vec![]
     }
 
+    fn default_config() -> Config {
+        test_config()
+    }
+
     // -- Core field routing tests --
 
     #[test]
     fn test_route_weight() {
+        let cfg = default_config();
         let value = vec!["175.0".to_string()];
-        let result = route_field("weight", &value, "175.0", SAMPLE, &empty_modules()).unwrap();
+        let result =
+            route_field("weight", &value, "175.0", SAMPLE, &cfg, &empty_modules()).unwrap();
         assert!(result.contains("weight: 175.0"));
         assert!(!result.contains("173.4"));
     }
 
     #[test]
     fn test_route_sleep() {
+        let cfg = default_config();
         let value = vec!["11pm-7am".to_string()];
-        let result = route_field("sleep", &value, "11pm-7am", SAMPLE, &empty_modules()).unwrap();
+        let result =
+            route_field("sleep", &value, "11pm-7am", SAMPLE, &cfg, &empty_modules()).unwrap();
         assert!(result.contains("sleep: \"11pm-7am\""));
     }
 
     #[test]
     fn test_route_mood() {
+        let cfg = default_config();
         let value = vec!["5".to_string()];
-        let result = route_field("mood", &value, "5", SAMPLE, &empty_modules()).unwrap();
+        let result = route_field("mood", &value, "5", SAMPLE, &cfg, &empty_modules()).unwrap();
         assert!(result.contains("mood: 5"));
         assert!(!result.contains("mood: 4"));
     }
 
     #[test]
     fn test_route_energy() {
+        let cfg = default_config();
         let value = vec!["3".to_string()];
-        let result = route_field("energy", &value, "3", SAMPLE, &empty_modules()).unwrap();
+        let result = route_field("energy", &value, "3", SAMPLE, &cfg, &empty_modules()).unwrap();
         assert!(result.contains("energy: 3"));
     }
 
@@ -205,16 +216,32 @@ Good session.
 
     #[test]
     fn test_route_metric() {
+        let cfg = default_config();
         let value = vec!["resting_hr".to_string(), "52".to_string()];
-        let result =
-            route_field("metric", &value, "resting_hr 52", SAMPLE, &empty_modules()).unwrap();
+        let result = route_field(
+            "metric",
+            &value,
+            "resting_hr 52",
+            SAMPLE,
+            &cfg,
+            &empty_modules(),
+        )
+        .unwrap();
         assert!(result.contains("resting_hr: 52"));
     }
 
     #[test]
     fn test_route_metric_missing_value() {
+        let cfg = default_config();
         let value = vec!["resting_hr".to_string()];
-        let result = route_field("metric", &value, "resting_hr", SAMPLE, &empty_modules());
+        let result = route_field(
+            "metric",
+            &value,
+            "resting_hr",
+            SAMPLE,
+            &cfg,
+            &empty_modules(),
+        );
         assert!(result.is_err());
     }
 
@@ -222,11 +249,13 @@ Good session.
 
     #[test]
     fn test_reject_invalid_weight() {
+        let cfg = default_config();
         let result = route_field(
             "weight",
             &["banana".into()],
             "banana",
             SAMPLE,
+            &cfg,
             &empty_modules(),
         );
         assert!(result.is_err());
@@ -235,32 +264,65 @@ Good session.
 
     #[test]
     fn test_reject_negative_weight() {
-        let result = route_field("weight", &["-5".into()], "-5", SAMPLE, &empty_modules());
+        let cfg = default_config();
+        let result = route_field(
+            "weight",
+            &["-5".into()],
+            "-5",
+            SAMPLE,
+            &cfg,
+            &empty_modules(),
+        );
         assert!(result.is_err());
     }
 
     #[test]
     fn test_reject_mood_out_of_range() {
-        let result = route_field("mood", &["999".into()], "999", SAMPLE, &empty_modules());
+        let cfg = default_config();
+        let result = route_field(
+            "mood",
+            &["999".into()],
+            "999",
+            SAMPLE,
+            &cfg,
+            &empty_modules(),
+        );
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("Expected 1-5"));
     }
 
     #[test]
     fn test_reject_mood_not_number() {
-        let result = route_field("mood", &["great".into()], "great", SAMPLE, &empty_modules());
+        let cfg = default_config();
+        let result = route_field(
+            "mood",
+            &["great".into()],
+            "great",
+            SAMPLE,
+            &cfg,
+            &empty_modules(),
+        );
         assert!(result.is_err());
     }
 
     #[test]
     fn test_reject_energy_zero() {
-        let result = route_field("energy", &["0".into()], "0", SAMPLE, &empty_modules());
+        let cfg = default_config();
+        let result = route_field("energy", &["0".into()], "0", SAMPLE, &cfg, &empty_modules());
         assert!(result.is_err());
     }
 
     #[test]
     fn test_reject_sleep_no_dash() {
-        let result = route_field("sleep", &["10pm".into()], "10pm", SAMPLE, &empty_modules());
+        let cfg = default_config();
+        let result = route_field(
+            "sleep",
+            &["10pm".into()],
+            "10pm",
+            SAMPLE,
+            &cfg,
+            &empty_modules(),
+        );
         assert!(result.is_err());
         assert!(result
             .unwrap_err()
@@ -270,11 +332,13 @@ Good session.
 
     #[test]
     fn test_sleep_quality_routes_correctly() {
+        let cfg = default_config();
         let result = route_field(
             "sleep_quality",
             &["4".into()],
             "4",
             SAMPLE,
+            &cfg,
             &empty_modules(),
         )
         .unwrap();
@@ -283,11 +347,13 @@ Good session.
 
     #[test]
     fn test_sleep_quality_validates() {
+        let cfg = default_config();
         let result = route_field(
             "sleep_quality",
             &["9".into()],
             "9",
             SAMPLE,
+            &cfg,
             &empty_modules(),
         );
         assert!(result.is_err());
@@ -295,12 +361,14 @@ Good session.
 
     #[test]
     fn test_reject_metric_non_numeric() {
+        let cfg = default_config();
         let value = vec!["resting_hr".into(), "banana".into()];
         let result = route_field(
             "metric",
             &value,
             "resting_hr banana",
             SAMPLE,
+            &cfg,
             &empty_modules(),
         );
         assert!(result.is_err());
@@ -312,23 +380,26 @@ Good session.
 
     #[test]
     fn test_accept_valid_inputs() {
+        let cfg = default_config();
         // These should all succeed
         route_field(
             "weight",
             &["173.4".into()],
             "173.4",
             SAMPLE,
+            &cfg,
             &empty_modules(),
         )
         .unwrap();
-        route_field("mood", &["1".into()], "1", SAMPLE, &empty_modules()).unwrap();
-        route_field("mood", &["5".into()], "5", SAMPLE, &empty_modules()).unwrap();
-        route_field("energy", &["3".into()], "3", SAMPLE, &empty_modules()).unwrap();
+        route_field("mood", &["1".into()], "1", SAMPLE, &cfg, &empty_modules()).unwrap();
+        route_field("mood", &["5".into()], "5", SAMPLE, &cfg, &empty_modules()).unwrap();
+        route_field("energy", &["3".into()], "3", SAMPLE, &cfg, &empty_modules()).unwrap();
         route_field(
             "sleep",
             &["10pm-6am".into()],
             "10pm-6am",
             SAMPLE,
+            &cfg,
             &empty_modules(),
         )
         .unwrap();
@@ -341,7 +412,7 @@ Good session.
         let config = test_config();
         let modules = crate::modules::build_registry(&config);
         let value = vec!["pullup".to_string(), "BWx8".to_string()];
-        let result = route_field("lift", &value, "pullup BWx8", SAMPLE, &modules).unwrap();
+        let result = route_field("lift", &value, "pullup BWx8", SAMPLE, &config, &modules).unwrap();
         assert!(result.contains("  pullup: BWx8"));
         // Existing lifts preserved
         assert!(result.contains("  squat: 185x5, 185x5"));
@@ -352,16 +423,57 @@ Good session.
         let config = test_config();
         let modules = crate::modules::build_registry(&config);
         let value = vec!["pullup".to_string()];
-        let result = route_field("lift", &value, "pullup", SAMPLE, &modules);
+        let result = route_field("lift", &value, "pullup", SAMPLE, &config, &modules);
         assert!(result.is_err());
     }
 
     #[test]
     fn test_route_unknown_field() {
-        let result = route_field("banana", &["x".to_string()], "x", SAMPLE, &empty_modules());
+        let cfg = default_config();
+        let result = route_field(
+            "banana",
+            &["x".to_string()],
+            "x",
+            SAMPLE,
+            &cfg,
+            &empty_modules(),
+        );
         assert!(result.is_err());
         let err = result.unwrap_err().to_string();
         assert!(err.contains("Unknown field"));
+    }
+
+    // -- Weight unit in error messages --
+
+    #[test]
+    fn test_weight_error_includes_unit_lbs() {
+        let cfg = default_config();
+        let result = route_field(
+            "weight",
+            &["banana".into()],
+            "banana",
+            SAMPLE,
+            &cfg,
+            &empty_modules(),
+        );
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("lbs"), "error should mention lbs: {err}");
+    }
+
+    #[test]
+    fn test_weight_error_includes_unit_kg() {
+        let mut cfg = default_config();
+        cfg.weight_unit = crate::config::WeightUnit::Kg;
+        let result = route_field(
+            "weight",
+            &["9999".into()],
+            "9999",
+            SAMPLE,
+            &cfg,
+            &empty_modules(),
+        );
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("kg"), "error should mention kg: {err}");
     }
 
     // -- File creation from template --

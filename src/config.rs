@@ -1,7 +1,26 @@
 use color_eyre::eyre::{Result, WrapErr};
+use color_eyre::Section;
 use serde::Deserialize;
 use std::collections::HashMap;
+use std::fmt;
 use std::path::PathBuf;
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum WeightUnit {
+    #[default]
+    Lbs,
+    Kg,
+}
+
+impl fmt::Display for WeightUnit {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            WeightUnit::Lbs => write!(f, "lbs"),
+            WeightUnit::Kg => write!(f, "kg"),
+        }
+    }
+}
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct Config {
@@ -10,6 +29,11 @@ pub struct Config {
     pub db_path: Option<String>,
     #[serde(default = "default_refresh_secs")]
     pub refresh_secs: u64,
+    /// Unit for weight display. The database stores raw numbers without unit
+    /// information, so changing this mid-use makes historical values ambiguous
+    /// (no automatic conversion is performed).
+    #[serde(default)]
+    pub weight_unit: WeightUnit,
     #[serde(default)]
     pub modules: ModulesConfig,
     #[serde(default)]
@@ -79,8 +103,14 @@ impl Config {
         }
         let contents = std::fs::read_to_string(&path)
             .wrap_err_with(|| format!("Failed to read config at {}", path.display()))?;
-        let config: Config = toml::from_str(&contents)
-            .wrap_err_with(|| format!("Failed to parse config at {}", path.display()))?;
+        let config: Config = toml::from_str(&contents).map_err(|e| {
+            let err = color_eyre::eyre::eyre!("Failed to parse config at {}: {e}", path.display());
+            if e.message().contains("weight_unit") {
+                err.suggestion("weight_unit must be \"kg\" or \"lbs\" (default: \"lbs\").")
+            } else {
+                err
+            }
+        })?;
         config.validate()?;
         Ok(config)
     }
@@ -188,5 +218,43 @@ mod tests {
         assert!(config.modules.training);
         assert!(config.modules.trends);
         assert!(!config.modules.climbing);
+    }
+
+    #[test]
+    fn test_weight_unit_defaults_to_lbs() {
+        let config: Config = toml::from_str("notes_dir = '/tmp/test'\n").unwrap();
+        assert_eq!(config.weight_unit, WeightUnit::Lbs);
+    }
+
+    #[test]
+    fn test_weight_unit_kg() {
+        let config: Config =
+            toml::from_str("notes_dir = '/tmp/test'\nweight_unit = 'kg'\n").unwrap();
+        assert_eq!(config.weight_unit, WeightUnit::Kg);
+    }
+
+    #[test]
+    fn test_weight_unit_lbs_explicit() {
+        let config: Config =
+            toml::from_str("notes_dir = '/tmp/test'\nweight_unit = 'lbs'\n").unwrap();
+        assert_eq!(config.weight_unit, WeightUnit::Lbs);
+    }
+
+    #[test]
+    fn test_weight_unit_invalid() {
+        let result: std::result::Result<Config, _> =
+            toml::from_str("notes_dir = '/tmp/test'\nweight_unit = 'stones'\n");
+        assert!(result.is_err());
+        let err_msg = result.unwrap_err().message().to_string();
+        assert!(
+            err_msg.contains("unknown variant"),
+            "error should mention unknown variant: {err_msg}"
+        );
+    }
+
+    #[test]
+    fn test_weight_unit_display() {
+        assert_eq!(WeightUnit::Lbs.to_string(), "lbs");
+        assert_eq!(WeightUnit::Kg.to_string(), "kg");
     }
 }

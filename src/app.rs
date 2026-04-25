@@ -137,8 +137,7 @@ fn open_editor(config: &Config) -> Result<()> {
     let note_path = config.notes_dir_path().join(format!("{today}.md"));
 
     if !note_path.exists() {
-        let template = include_str!("../templates/daily-note.md");
-        let content = template.replace("DATE_PLACEHOLDER", &today);
+        let content = crate::template::render_daily_note(&today, config);
         std::fs::write(&note_path, content)?;
     }
 

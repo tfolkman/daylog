@@ -45,7 +45,7 @@ impl Module for Dashboard {
         Ok(vec![])
     }
 
-    fn draw(&self, f: &mut Frame, area: Rect, conn: &Connection, _config: &Config) {
+    fn draw(&self, f: &mut Frame, area: Rect, conn: &Connection, config: &Config) {
         let today = today_str();
 
         let block = Block::default().borders(Borders::ALL).title(" Dashboard ");
@@ -119,7 +119,7 @@ impl Module for Dashboard {
                 let weight_line = match weight {
                     Some(w) => vec![
                         Span::styled("Weight: ", Style::default().fg(Color::Blue)),
-                        Span::raw(format!("{w:.1}")),
+                        Span::raw(format!("{w:.1} {}", config.weight_unit)),
                     ],
                     None => vec![
                         Span::styled("Weight: ", Style::default().fg(Color::Blue)),

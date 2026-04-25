@@ -141,7 +141,9 @@ fn cmd_status() -> Result<()> {
     let conn = db::open_ro(&db_path)?;
     let today = chrono::Local::now().format("%Y-%m-%d").to_string();
 
-    let mut output = serde_json::json!({});
+    let mut output = serde_json::json!({
+        "weight_unit": config.weight_unit.to_string(),
+    });
     if let Some(day_data) = db::load_today(&conn, &today)? {
         output["today"] = day_data;
     }
@@ -183,8 +185,7 @@ fn cmd_edit(date: Option<&str>) -> Result<()> {
     let note_path = config.notes_dir_path().join(format!("{date_str}.md"));
 
     if !note_path.exists() {
-        let template = include_str!("../templates/daily-note.md");
-        let content = template.replace("DATE_PLACEHOLDER", &date_str);
+        let content = daylog::template::render_daily_note(&date_str, &config);
         std::fs::write(&note_path, content)?;
     }
 

@@ -50,7 +50,8 @@ impl Module for Trends {
         // Weight sparkline
         if let Ok(data) = load_weight_sparkline(conn) {
             if !data.is_empty() {
-                series.push(("", "Weight".to_string(), data, Color::Cyan));
+                let label = format!("Weight ({})", config.weight_unit);
+                series.push(("", label, data, Color::Cyan));
             }
         }
 
